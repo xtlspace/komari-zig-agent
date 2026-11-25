@@ -15,3 +15,15 @@ test "remaining report sleep uses elapsed work time" {
     try std.testing.expectEqual(@as(u64, 0), timing.remainingSleepMs(1000, 1000, 2500));
     try std.testing.expectEqual(@as(u64, 1000), timing.remainingSleepMs(1000, 1000, 900));
 }
+
+test "low-frequency collectors sample once every ten reports" {
+    try std.testing.expectEqual(@as(u64, 10_000), timing.sampleTtlMs(1000));
+    try std.testing.expectEqual(@as(u64, 30_000), timing.sampleTtlMs(3000));
+    try std.testing.expectEqual(@as(u64, 50_000), timing.sampleTtlMs(5000));
+    try std.testing.expectEqual(@as(u64, 300_000), timing.sampleTtlMs(30_000));
+}
+
+test "sample ttl saturates instead of overflowing" {
+    try std.testing.expectEqual(std.math.maxInt(u64), timing.sampleTtlMs(std.math.maxInt(u64)));
+    try std.testing.expectEqual(std.math.maxInt(u64), timing.sampleTtlMs(std.math.maxInt(u64) / 10 + 1));
+}

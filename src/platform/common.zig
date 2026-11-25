@@ -37,6 +37,9 @@ pub const SnapshotOptions = struct {
     host_proc: []const u8 = "",
     memory_include_cache: bool = false,
     memory_report_raw_used: bool = false,
+    /// Cache TTL for low-frequency collectors (connections/process/disk).
+    /// 0 keeps each platform collector's built-in default.
+    sample_ttl_ms: u64 = 0,
 };
 
 pub const NetworkInfo = struct {

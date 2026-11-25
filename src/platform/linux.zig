@@ -41,6 +41,13 @@ const disk_cache_ttl_ms: u64 = 30 * 1000;
 const connections_cache_ttl_ms: u64 = 5 * 1000;
 const process_cache_ttl_ms: u64 = 5 * 1000;
 
+/// Resolves the cache TTL for a low-frequency collector. The report loop passes
+/// ten report intervals so collectors sample once every ten reports; direct
+/// callers (tests, `check-mem`) keep passing zero and get the platform default.
+fn sampleTtl(options: common.SnapshotOptions, fallback_ms: u64) u64 {
+    return if (options.sample_ttl_ms == 0) fallback_ms else options.sample_ttl_ms;
+}
+
 const CacheKey = struct {
     len: usize,
     hash: u64,
@@ -114,11 +121,11 @@ pub fn snapshot(options: common.SnapshotOptions) !common.Snapshot {
         .ram = mem_swap.ram,
         .swap = mem_swap.swap,
         .load = try loadInfo(options.host_proc),
-        .disk = try cachedDiskInfoWithMountpoints(options.include_mountpoints),
+        .disk = try cachedDiskInfoWithMountpoints(options.include_mountpoints, sampleTtl(options, disk_cache_ttl_ms)),
         .network = try networkInfo(options),
-        .connections = try cachedConnectionsInfo(options.host_proc),
+        .connections = try cachedConnectionsInfo(options.host_proc, sampleTtl(options, connections_cache_ttl_ms)),
         .uptime = try uptime(options.host_proc),
-        .process = try cachedProcessCount(options.host_proc),
+        .process = try cachedProcessCount(options.host_proc, sampleTtl(options, process_cache_ttl_ms)),
         .gpu_json = if (options.enable_gpu) gpuReportJson(std.heap.page_allocator) catch "" else "",
     };
 }
@@ -1139,12 +1146,15 @@ fn diskInfo() !common.DiskInfo {
     return diskInfoWithMountpoints("");
 }
 
-fn cachedDiskInfoWithMountpoints(include_mountpoints: []const u8) !common.DiskInfo {
+fn cachedDiskInfoWithMountpoints(include_mountpoints: []const u8, ttl_ms: u64) !common.DiskInfo {
     const now_ms = compat.milliTimestamp();
     const key = cacheKey(include_mountpoints);
+    // Widen-only floor: a short report interval must not make disk sampling
+    // more frequent than the previous 30s default.
+    const ttl = @max(ttl_ms, disk_cache_ttl_ms);
     cache_mutex.lock();
     if (cached_disk) |sample| {
-        if (cacheKeyMatches(sample.key, key) and cacheFresh(now_ms, sample.timestamp_ms, disk_cache_ttl_ms)) {
+        if (cacheKeyMatches(sample.key, key) and cacheFresh(now_ms, sample.timestamp_ms, ttl)) {
             const value = sample.value;
             cache_mutex.unlock();
             return value;
@@ -1457,12 +1467,12 @@ fn connectionsInfo(host_proc: []const u8) !common.ConnectionInfo {
     };
 }
 
-fn cachedConnectionsInfo(host_proc: []const u8) !common.ConnectionInfo {
+fn cachedConnectionsInfo(host_proc: []const u8, ttl_ms: u64) !common.ConnectionInfo {
     const now_ms = compat.milliTimestamp();
     const key = cacheKey(host_proc);
     cache_mutex.lock();
     if (cached_connections) |sample| {
-        if (cacheKeyMatches(sample.key, key) and cacheFresh(now_ms, sample.timestamp_ms, connections_cache_ttl_ms)) {
+        if (cacheKeyMatches(sample.key, key) and cacheFresh(now_ms, sample.timestamp_ms, ttl_ms)) {
             const value = sample.value;
             cache_mutex.unlock();
             return value;
@@ -1902,12 +1912,12 @@ fn processCount(host_proc: []const u8) !u64 {
     return count;
 }
 
-fn cachedProcessCount(host_proc: []const u8) !u64 {
+fn cachedProcessCount(host_proc: []const u8, ttl_ms: u64) !u64 {
     const now_ms = compat.milliTimestamp();
     const key = cacheKey(host_proc);
     cache_mutex.lock();
     if (cached_process) |sample| {
-        if (cacheKeyMatches(sample.key, key) and cacheFresh(now_ms, sample.timestamp_ms, process_cache_ttl_ms)) {
+        if (cacheKeyMatches(sample.key, key) and cacheFresh(now_ms, sample.timestamp_ms, ttl_ms)) {
             const value = sample.value;
             cache_mutex.unlock();
             return value;

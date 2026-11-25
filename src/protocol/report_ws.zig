@@ -38,6 +38,7 @@ fn snapshotOptions(cfg: config.Config) common.SnapshotOptions {
         .host_proc = cfg.host_proc,
         .memory_include_cache = cfg.memory_include_cache,
         .memory_report_raw_used = cfg.memory_report_raw_used,
+        .sample_ttl_ms = timing.sampleTtlMs(timing.reportIntervalMs(cfg.interval)),
     };
 }
 
